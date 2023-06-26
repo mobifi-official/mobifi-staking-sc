@@ -1,0 +1,17 @@
+{
+  "name": "hardhat-demo",
+  "scripts": {
+    "test": "hardhat compile && hardhat test",
+    "compile": "hardhat compile"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-network-helpers": "^1.0.8",
+    "@nomicfoundation/hardhat-toolbox": "^2.0.2",
+    "chai": "^4.3.7"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^2.5.1",
+    "dotenv": "^16.1.4",
+    "hardhat": "^2.14.1"
+  }
+}
