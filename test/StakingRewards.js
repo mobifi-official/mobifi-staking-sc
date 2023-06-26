@@ -157,15 +157,20 @@ describe("StakingRewardsTest", async () => {
     expect(await mofiTokenContract.balanceOf(user4Account.address)).to.equal(ethers.utils.parseEther("10000"));
   });
 
+
+
+
   /**
    * 
    */
   it('should allow user to start staking', async () => {
-
+  
     await stakingRewardsContract.connect(user1Account).stake(ethers.utils.parseEther("1000"));
     await stakingRewardsContract.connect(user2Account).stake(ethers.utils.parseEther("1000"));
     await stakingRewardsContract.connect(user3Account).stake(ethers.utils.parseEther("2000"));
     await stakingRewardsContract.connect(user4Account).stake(ethers.utils.parseEther("5000"));
+
+    
     const user1sStakingTokenBalance = await stakingRewardsContract.balanceOf(user1Account.address);
     const user1sStakingTokenWalletBalance = await mofiTokenContract.balanceOf(user1Account.address);
 
@@ -180,6 +185,28 @@ describe("StakingRewardsTest", async () => {
     await logAccountBalance(stakingRewardsContract.address);
     console.log('--- end log for staking contract ----');
   });
+
+
+  // it('should allow user to withdraw staked amount as well as rewards earned after staking', async () => {
+  //   //  await mofiTokenContract.connect(ownerSigner).transfer(stakingRewardsContract.address, ethers.utils.parseEther("450000"));
+  
+  //   await stakingRewardsContract.connect(user1Account).exit();
+  //   await stakingRewardsContract.connect(user1Account).stake(ethers.utils.parseEther("1000"));
+
+  //   // const user1sStakingTokenBalance = await stakingRewardsContract.balanceOf(user1Account.address);
+  //   const initialWalletBalance = await mofiTokenContract.balanceOf(user1Account.address);
+  //   // Increase time by 4 days
+  //   await increaseTime(4);
+
+  //   const amountToWithdraw = ethers.utils.parseEther("200");
+
+
+  //   await stakingRewardsContract.connect(user1Account).withdraw(amountToWithdraw);
+  //   const user1sStakingTokenWalletBalance = await mofiTokenContract.balanceOf(user1Account.address);
+
+  //   expect(user1sStakingTokenWalletBalance.sub(initialWalletBalance)).to.be.gt(amountToWithdraw);
+
+  // });
 
 
 
@@ -226,7 +253,7 @@ describe("StakingRewardsTest", async () => {
    * user_rewards = user_balance / 100 * rewards_rate * (current_datetime - account_start_staking) / staking_reward_duration
    */
   it('should calculate staking account user 1 rewards', async () => {
-    stakingDay = 1;
+    stakingDay = 5;
     await increaseTime(stakingDay);
 
     console.log('--- calculation information for user 1 ---');
@@ -297,7 +324,7 @@ describe("StakingRewardsTest", async () => {
    * 
    */
   it('should allow account to exit from staking program', async () => {
-    stakingDay = stakingDay + 365;
+    stakingDay = stakingDay + 1;
     await increaseTime(stakingDay);
     await stakingRewardsContract.connect(user3Account).exit();
     const userStakeBalance = await mofiTokenContract.balanceOf(user3Account.address);

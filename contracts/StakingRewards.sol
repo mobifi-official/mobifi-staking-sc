@@ -42,7 +42,7 @@ contract StakingRewards is
     IERC20 public stakingToken; // Object that holds information about the staking contract like wallet address
     uint256 public periodFinish = 0; // Duration that the token has been staked
     uint256 public rewardRate = 5; // Interest rate
-    uint256 public rewardsDuration = 3 days; // Duration based on the interest will be calculated
+    uint256 public rewardsDuration = 7 days; // Duration based on the interest will be calculated
     uint256 public stakingStart;
 
     uint256 public constant maxStakeAmount = 5000 ether;
@@ -116,35 +116,6 @@ contract StakingRewards is
         }
     }
 
-    /**
-     * @dev Determines whether a user can stake a certain amount of tokens based on the available rewards.
-     * @param amount The amount of tokens to be staked.
-     * @return A boolean indicating whether the user can stake the specified amount.
-     */
- function gateKeeper(uint256 amount) external view returns (bool) {
-    // Calculate the remaining stake duration based on the staking start time and rewards duration
-    uint256 timeSinceStart = block.timestamp.sub(stakingStart);
-    uint256 stakeDuration = rewardsDuration > timeSinceStart ? rewardsDuration.sub(timeSinceStart) : 0;
-
-    // Check if the stake duration is greater than 0 and the current block timestamp is within the staking duration.
-    // If `true`, we proceed on to calculate the amount of rewards available in the reward pool as well as
-    // the amount of rewards needed based on the amount the user wants to stake
-    if (stakeDuration > 0 && block.timestamp < stakingStart.add(rewardsDuration)) {
-        // Calculate the rewards needed for the specified amount based on the reward rate and stake duration
-        uint256 rewardsNeeded = amount.div(100).mul(rewardRate).mul(stakeDuration).div(rewardsDuration);
-
-        // Get the current MOFI rewards balance in the contract
-        uint256 rewardsBalance = rewardsToken.balanceOf(address(this));
-
-        // Check if the MOFI rewards balance is greater than or equal to the rewards needed
-        return rewardsBalance >= rewardsNeeded;
-    } else {
-        // If the stake duration is zero or the current block timestamp is outside the staking duration, return [false]
-        return false;
-    }
-}
-
-
     function getUserStakeDuration(
         address account
     ) public view returns (uint256) {
@@ -178,6 +149,43 @@ contract StakingRewards is
             return rewardsToken.balanceOf(address(this)).sub(_totalSupply);
         } else {
             return rewardsToken.balanceOf(address(this));
+        }
+    }
+
+    /**
+     * @dev Determines whether a user can stake a certain amount of tokens based on the available rewards.
+     * @param amount The amount of tokens to be staked.
+     * @return A boolean indicating whether the user can stake the specified amount.
+     */
+    function gateKeeper(uint256 amount) public view returns (bool) {
+        // Calculate the remaining stake duration based on the staking start time and rewards duration
+        uint256 timeSinceStart = block.timestamp.sub(stakingStart);
+        uint256 stakeDuration = rewardsDuration > timeSinceStart
+            ? rewardsDuration.sub(timeSinceStart)
+            : 0;
+
+        // Check if the stake duration is greater than 0 and the current block timestamp is within the staking duration.
+        // If `true`, we proceed on to calculate the amount of rewards available in the reward pool as well as
+        // the amount of rewards needed based on the amount the user wants to stake
+        if (
+            stakeDuration > 0 &&
+            block.timestamp < stakingStart.add(rewardsDuration)
+        ) {
+            // Calculate the rewards needed for the specified amount based on the reward rate and stake duration
+            uint256 rewardsNeeded = amount
+                .div(100)
+                .mul(rewardRate)
+                .mul(stakeDuration)
+                .div(rewardsDuration);
+
+            // Get the current MOFI rewards balance in the contract
+            uint256 rewardsBalance = rewardsToken.balanceOf(address(this));
+
+            // Check if the MOFI rewards balance is greater than or equal to the rewards needed
+            return rewardsBalance >= rewardsNeeded;
+        } else {
+            // If the stake duration is zero or the current block timestamp is outside the staking duration, return [false]
+            return false;
         }
     }
 
@@ -274,6 +282,22 @@ contract StakingRewards is
 
         stakingToken.safeTransfer(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
+
+        // Check if user has any rewards, and send them to thir wallet address
+        uint256 reward = calculateAccountRewards(
+            _balances[msg.sender],
+            getUserStakeDuration(msg.sender)
+        );
+        if (reward > 0) {
+            rewards[msg.sender] = 0;
+            userRewardPerTokenPaid[msg.sender] = userRewardPerTokenPaid[
+                msg.sender
+            ].add(reward);
+
+            rewardsToken.safeTransfer(msg.sender, reward);
+            emit RewardPaid(msg.sender, reward);
+        }
+        //_startStakeDate[msg.sender] = 0;
     }
 
     function getReward() public nonReentrant {
