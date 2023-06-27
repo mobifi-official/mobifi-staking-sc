@@ -21,10 +21,8 @@ import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 // Inheritance
-// import "./interfaces/IStakingRewards.sol"; // TODO: match the logic for this interface
 import "./RewardsDistributionRecipient.sol";
 import "./Pausable.sol";
-import "hardhat/console.sol";
 
 contract StakingRewards is
     RewardsDistributionRecipient,
@@ -44,13 +42,11 @@ contract StakingRewards is
     uint256 public rewardRate = 5; // Interest rate
     uint256 public rewardsDuration = 7 days; // Duration based on the interest will be calculated
     uint256 public stakingStart;
-
-    uint256 public constant maxStakeAmount = 5000 ether;
+    uint256 public constant maxStakeAmount = 5000 ether; // Maximum amount of tokens the user is allowed to stake at a given time
 
     address[] public stakers;
 
     mapping(address => uint256) public userRewardPerTokenPaid;
-    mapping(address => uint256) public rewards;
 
     uint256 private _totalSupply;
     mapping(address => uint256) private _balances;
@@ -62,7 +58,6 @@ contract StakingRewards is
      *  rewards distribution, rewards token, and staking token.
      *  _owner and _rewardsDistribution address can be the same address.
      ***********************************************************************/
-
     constructor(
         address _owner,
         address _rewardsDistribution,
@@ -84,16 +79,18 @@ contract StakingRewards is
      * and reward duration i.e., read-only functions
      ***********************************************************************/
 
+    // This external view function returns the total supply of staked tokens
     function totalSupply() external view returns (uint256) {
         return _totalSupply;
     }
 
+    // This external view function returns the balance of staked tokens for a given account
     function balanceOf(address account) external view returns (uint256) {
         return _balances[account];
     }
 
-    // This fuctions checks if the user has exeeded the max reward period (i.365 day).
-    // If yes he will get interest rate for 365 days if not we need to compute
+    // This fuctions checks if the user has exeeded the max reward period: [rewardsDuration] days.
+    // If yes he will get interest rate for [rewardsDuration] days if not we need to compute
     // his staking duration until the emergencywithdraw = (TODAY - WHEN USED STARTED staking)
     function lastTimeRewardApplicable() public view returns (uint256) {
         return
@@ -102,30 +99,36 @@ contract StakingRewards is
                 : stakingStart.add(rewardsDuration);
     }
 
+    // This public view function calculates the rewards earned by an account based
+    // on the staked amount and stake duration
     function calculateAccountRewards(
         uint256 amount,
         uint256 stakeDuration
     ) public view returns (uint256) {
-        if (amount < 0) {
-            return 0;
-        } else {
-            return
-                amount.div(100).mul(rewardRate).mul(stakeDuration).div(
-                    rewardsDuration
-                );
-        }
+        return
+            amount.div(100).mul(rewardRate).mul(stakeDuration).div(
+                rewardsDuration
+            );
     }
 
+    // This public view function returns the stake duration for a given account
     function getUserStakeDuration(
         address account
     ) public view returns (uint256) {
-        return lastTimeRewardApplicable().sub(_startStakeDate[account]);
+        if (_startStakeDate[account] > lastTimeRewardApplicable()) {
+            return 0;
+        } else {
+            return lastTimeRewardApplicable().sub(_startStakeDate[account]);
+        }
     }
 
+    // This public view function returns the current block timestamp
     function getCurrentBlockTime() public view returns (uint256) {
         return block.timestamp;
     }
 
+    // This public view function calculates the rewards earned by an account
+    // based on their staked amount and stake duration
     function earned(address account) public view returns (uint256) {
         return
             calculateAccountRewards(
@@ -134,22 +137,49 @@ contract StakingRewards is
             );
     }
 
+    // This external view function returns the total rewards that can
+    // be earned over the rewards duration
     function getRewardForDuration() external view returns (uint256) {
         return rewardRate.mul(rewardsDuration);
     }
 
+    // This external view function returns the start date of staking for a given account
     function getStartDateAccountStake(
         address account
     ) external view returns (uint256) {
         return _startStakeDate[account];
     }
 
+    // This public view function returns the amount of rewards available in the contract
     function getRewardsAmount() public view returns (uint256) {
         if (address(stakingToken) == address(rewardsToken)) {
             return rewardsToken.balanceOf(address(this)).sub(_totalSupply);
         } else {
             return rewardsToken.balanceOf(address(this));
         }
+    }
+
+    /**
+     * @dev Returns the balance of unclaimed rewards for an account.
+     * @param account The address of the account.
+     * @return The unclaimed rewards balance.
+     */
+    function getUnclaimedRewardsBalanceForAccount(
+        address account
+    ) public view returns (uint256) {
+        // Get the cumulative rewards earned
+        uint256 cumulativeRewards = calculateAccountRewards(
+            _balances[account],
+            getUserStakeDuration(account)
+        );
+
+        // Calculate the unclaimed rewards by this user
+        uint256 unclaimedRewards = cumulativeRewards >=
+            userRewardPerTokenPaid[account]
+            ? cumulativeRewards.sub(userRewardPerTokenPaid[account])
+            : 0;
+
+        return unclaimedRewards;
     }
 
     /**
@@ -163,7 +193,6 @@ contract StakingRewards is
         uint256 stakeDuration = rewardsDuration > timeSinceStart
             ? rewardsDuration.sub(timeSinceStart)
             : 0;
-
         // Check if the stake duration is greater than 0 and the current block timestamp is within the staking duration.
         // If `true`, we proceed on to calculate the amount of rewards available in the reward pool as well as
         // the amount of rewards needed based on the amount the user wants to stake
@@ -177,10 +206,8 @@ contract StakingRewards is
                 .mul(rewardRate)
                 .mul(stakeDuration)
                 .div(rewardsDuration);
-
             // Get the current MOFI rewards balance in the contract
             uint256 rewardsBalance = rewardsToken.balanceOf(address(this));
-
             // Check if the MOFI rewards balance is greater than or equal to the rewards needed
             return rewardsBalance >= rewardsNeeded;
         } else {
@@ -216,19 +243,29 @@ contract StakingRewards is
     function stake(
         uint256 amount
     ) external nonReentrant notPaused rewardsBalanceSufficient(amount) {
+        // This line checks if the amount to be staked is greater than zero. If it is not, it throws
+        // an exception with the error message "Cannot stake 0". This ensures that the amount being
+        // staked is a positive value
         require(amount > 0, "Cannot stake 0");
 
+        // This line ensures that the msg.sender does not have an existing stake. It checks if the
+        // balance of the msg.sender is zero. If the balance is not zero, it throws an exception with
+        // the error message "You already have a stake. Please withdraw to stake another amount."
+        // This prevents users from staking additional amounts without first withdrawing their previous stake
         require(
-            _balances[msg.sender] <= 0,
-            "You already stake please exit to stake another amount"
+            _balances[msg.sender] == 0,
+            "You already have a stake. Please withdraw to stake another amount."
         );
-
+        // This line checks if the sum of the current balance of the msg.sender and the amount being staked is 
+        // less than or equal to the maxStakeAmount. If the sum exceeds the maxStakeAmount, it throws an 
+        // exception with the error message "Exceeds maximum stake amount". 
+        // This ensures that the user does not exceed the maximum allowed stake amount
         require(
             maxStakeAmount >= _balances[msg.sender].add(amount),
             "Exceeds maximum stake amount"
         );
-
-        // update total amount of staking token
+        
+        // Update total amount of staking token
         _totalSupply = _totalSupply.add(amount);
         // store balance current staking action plus staked amount
         _balances[msg.sender] = _balances[msg.sender].add(amount);
@@ -236,12 +273,10 @@ contract StakingRewards is
         _startStakeDate[msg.sender] = block.timestamp;
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
         userRewardPerTokenPaid[msg.sender] = 0;
-
         // Add user to stakers array if they're not already in it
         if (_balances[msg.sender] == amount) {
             stakers.push(msg.sender);
         }
-
         emit Staked(msg.sender, amount);
     }
 
@@ -261,13 +296,46 @@ contract StakingRewards is
      ***********************************************************************/
 
     function withdraw(uint256 amount) public nonReentrant {
+        // This line checks if the amount is greater than zero. If it is not, it throws an exception with the error
+        // message "Cannot withdraw 0". This ensures that the amount to be withdrawn is a positive value
         require(amount > 0, "Cannot withdraw 0");
 
-        // update total suplay of staking token
+        // Check if the staker has any rewards they haven't claimed yet
+        uint256 unclaimedRewards = getUnclaimedRewardsBalanceForAccount(
+            msg.sender
+        );
+
+        // If they have any unclaimed rewards, we add this number to the mapping of the rewards
+        // paid out to this particular user. This servers the purpose
+        // of keeping track of the rewards paid out to each user
+        if (unclaimedRewards > 0) {
+            userRewardPerTokenPaid[msg.sender] = userRewardPerTokenPaid[
+                msg.sender
+            ].add(unclaimedRewards);
+
+            // We then send said rewards earned on the staked tokens to the staker's wallet address
+            rewardsToken.safeTransfer(msg.sender, unclaimedRewards);
+        }
+
+        // Calculate the reduced stake duration based on the partial withdrawal
+        uint256 reducedStakeDuration = 0;
+
+        // If the user's balance (_balances[msg.sender]) is greater than the withdrawal amount (amount), it means
+        // the user is not withdrawing their entire stake. In that case, the function [getUserStakeDuration]
+        // is called to get the stake duration for the user.
+        if (_balances[msg.sender] > amount) {
+            // The stake duration is then calculated by multiplying the user's stake duration with the difference
+            // between their current balance and the withdrawal amount, and dividing it by their current balance.
+            // The resulting value is stored in the [reducedStakeDuration] variable
+            reducedStakeDuration = getUserStakeDuration(msg.sender)
+                .mul(_balances[msg.sender].sub(amount))
+                .div(_balances[msg.sender]);
+        }
+
+        // Update the total supply and balance of the msg.sender after the withdrawal. The amount is subtracted
+        // from both _totalSupply and _balances[msg.sender] to reflect the reduced staking amount
         _totalSupply = _totalSupply.sub(amount);
-        // update account balance
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
-        _startStakeDate[msg.sender] = 0;
 
         // Remove user from stakers array if they've withdrawn all their tokens
         if (_balances[msg.sender] == 0) {
@@ -280,39 +348,29 @@ contract StakingRewards is
             }
         }
 
+        // The stake start date for the msg.sender is updated. It is set to the current timestamp (lastTimeRewardApplicable())
+        // minus the reducedStakeDuration. This ensures that the stake start date is adjusted based on the partial withdrawal
+        _startStakeDate[msg.sender] = lastTimeRewardApplicable().sub(
+            reducedStakeDuration
+        );
+        // Transfer the amount of tokens the user staked back to them
         stakingToken.safeTransfer(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
-
-        // Check if user has any rewards, and send them to thir wallet address
-        uint256 reward = calculateAccountRewards(
-            _balances[msg.sender],
-            getUserStakeDuration(msg.sender)
-        );
-        if (reward > 0) {
-            rewards[msg.sender] = 0;
-            userRewardPerTokenPaid[msg.sender] = userRewardPerTokenPaid[
-                msg.sender
-            ].add(reward);
-
-            rewardsToken.safeTransfer(msg.sender, reward);
-            emit RewardPaid(msg.sender, reward);
-        }
-        //_startStakeDate[msg.sender] = 0;
     }
 
     function getReward() public nonReentrant {
-        uint256 reward = calculateAccountRewards(
-            _balances[msg.sender],
-            getUserStakeDuration(msg.sender)
+        // Calculate the newly earned rewards by this user
+        uint256 unclaimedRewards = getUnclaimedRewardsBalanceForAccount(
+            msg.sender
         );
-        if (reward > 0) {
-            rewards[msg.sender] = 0;
+
+        if (unclaimedRewards > 0) {
             userRewardPerTokenPaid[msg.sender] = userRewardPerTokenPaid[
                 msg.sender
-            ].add(reward);
+            ].add(unclaimedRewards);
 
-            rewardsToken.safeTransfer(msg.sender, reward);
-            emit RewardPaid(msg.sender, reward);
+            rewardsToken.safeTransfer(msg.sender, unclaimedRewards);
+            emit RewardPaid(msg.sender, unclaimedRewards);
         }
     }
 

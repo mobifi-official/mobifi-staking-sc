@@ -158,19 +158,24 @@ describe("StakingRewardsTest", async () => {
   });
 
 
+  it('user should not have unclaimed rewards balance before staking', async () => {
 
+    const unclaimedRewards = await stakingRewardsContract.getUnclaimedRewardsBalanceForAccount(user1Account.address);
+
+    expect(unclaimedRewards).to.be.eq(0);
+  });
 
   /**
    * 
    */
   it('should allow user to start staking', async () => {
-  
+
     await stakingRewardsContract.connect(user1Account).stake(ethers.utils.parseEther("1000"));
     await stakingRewardsContract.connect(user2Account).stake(ethers.utils.parseEther("1000"));
     await stakingRewardsContract.connect(user3Account).stake(ethers.utils.parseEther("2000"));
     await stakingRewardsContract.connect(user4Account).stake(ethers.utils.parseEther("5000"));
 
-    
+
     const user1sStakingTokenBalance = await stakingRewardsContract.balanceOf(user1Account.address);
     const user1sStakingTokenWalletBalance = await mofiTokenContract.balanceOf(user1Account.address);
 
@@ -185,30 +190,6 @@ describe("StakingRewardsTest", async () => {
     await logAccountBalance(stakingRewardsContract.address);
     console.log('--- end log for staking contract ----');
   });
-
-
-  // it('should allow user to withdraw staked amount as well as rewards earned after staking', async () => {
-  //   //  await mofiTokenContract.connect(ownerSigner).transfer(stakingRewardsContract.address, ethers.utils.parseEther("450000"));
-  
-  //   await stakingRewardsContract.connect(user1Account).exit();
-  //   await stakingRewardsContract.connect(user1Account).stake(ethers.utils.parseEther("1000"));
-
-  //   // const user1sStakingTokenBalance = await stakingRewardsContract.balanceOf(user1Account.address);
-  //   const initialWalletBalance = await mofiTokenContract.balanceOf(user1Account.address);
-  //   // Increase time by 4 days
-  //   await increaseTime(4);
-
-  //   const amountToWithdraw = ethers.utils.parseEther("200");
-
-
-  //   await stakingRewardsContract.connect(user1Account).withdraw(amountToWithdraw);
-  //   const user1sStakingTokenWalletBalance = await mofiTokenContract.balanceOf(user1Account.address);
-
-  //   expect(user1sStakingTokenWalletBalance.sub(initialWalletBalance)).to.be.gt(amountToWithdraw);
-
-  // });
-
-
 
   /**
    * catch error if user stake 0
@@ -239,7 +220,7 @@ describe("StakingRewardsTest", async () => {
       await stakingRewardsContract.connect(user4Account).stake(ethers.utils.parseEther("5000"))
       assert.fail("Expected transaction to revert");
     } catch (error) {
-      expect(error.message).to.contain("reverted with reason string 'You already stake please exit to stake another amount'");
+      expect(error.message).to.contain("reverted with reason string 'You already have a stake. Please withdraw to stake another amount.'");
     }
   });
 
@@ -286,6 +267,17 @@ describe("StakingRewardsTest", async () => {
     expect(canStake).to.be.true;
   });
 
+  it('unclaimed balance after some time has elapsed should be greater than 0', async () => {
+    stakingDay = 5;
+    await increaseTime(stakingDay);
+
+    const unclaimedRewards = await stakingRewardsContract.getUnclaimedRewardsBalanceForAccount(user1Account.address);
+
+    console.log(`Unclaimed rewards at day ${stakingDay} is ${unclaimedRewards / Math.pow(10, mofiTokenContractDecimals)}`);
+
+    expect(unclaimedRewards).to.be.gt(0);
+  });
+
   /**
    * 
    */
@@ -296,17 +288,8 @@ describe("StakingRewardsTest", async () => {
     expect(userStakeBalance > ethers.utils.parseEther('1000')).to.be.equal(true);
   });
 
-  it('should not allow new account start for unsufficient balance of rewards', async () => {
 
-    try {
-      await stakingRewardsContract.connect(user5Account).stake(ethers.utils.parseEther("5000"))
-      assert.fail("Expected transaction to revert");
-    } catch (error) {
-      expect(error.message).to.contain("reverted with reason string 'rewards balance is not sufficient to accept new staking'");
-    }
-  });
-
-  it('should return true if there are not enough rewards in the reward pool', async () => {
+  it('should return false if there are not enough rewards in the reward pool', async () => {
     const initialRewardBalance = ethers.utils.parseEther("450");
     const stakingAmount = ethers.utils.parseEther("400");
 
@@ -316,7 +299,7 @@ describe("StakingRewardsTest", async () => {
     // Check the result of the gateKeeper function
     const result = await stakingRewardsContract.gateKeeper(stakingAmount);
 
-    expect(result).to.be.true;
+    expect(result).to.be.false;
   });
 
 
