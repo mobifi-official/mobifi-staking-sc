@@ -165,6 +165,13 @@ describe("StakingRewardsTest", async () => {
     expect(unclaimedRewards).to.be.eq(0);
   });
 
+  it('user should be recorded as not having participated in the staking program before they make their first stake', async () => {
+
+    const result = await stakingRewardsContract.userHasParticipatedInTheStakingProgram(user1Account.address);
+
+    expect(result).to.be.false;
+  });
+
   /**
    * 
    */
@@ -191,6 +198,13 @@ describe("StakingRewardsTest", async () => {
     console.log('--- end log for staking contract ----');
   });
 
+  it('user should be recorded as having participated in the staking program after they make their first stake', async () => {
+
+    const result = await stakingRewardsContract.userHasParticipatedInTheStakingProgram(user1Account.address);
+
+    expect(result).to.be.true;
+  });
+
   /**
    * catch error if user stake 0
    */
@@ -213,6 +227,23 @@ describe("StakingRewardsTest", async () => {
     } catch (error) {
       expect(error.message).to.contain("reverted with reason string 'Exceeds maximum stake amount'");
     }
+  });
+
+  it("should not allow anyone who's not the owner of the staking smart contract to change maxStakeAmount", async () => {
+    try {
+      await stakingRewardsContract.connect(user1Account).adjustMaxStakeAmount(ethers.utils.parseEther("10000"))
+    } catch (error) {
+      expect(error.message).to.contain("Only the contract owner may perform this action");
+    }
+  });
+
+  it('should allow the owner of the staking smart contract to change maxStakeAmount', async () => {
+
+    await stakingRewardsContract.connect(ownerSigner).adjustMaxStakeAmount(ethers.utils.parseEther("10000"));
+    const maxStakeAmount = await stakingRewardsContract.maxStakeAmount();
+    const newMaxStakeAmount = (maxStakeAmount / Math.pow(10, mofiTokenContractDecimals));
+    expect(newMaxStakeAmount).to.be.eq(10000);
+
   });
 
   it('should not allow user to stake twice', async () => {
@@ -349,6 +380,13 @@ describe("StakingRewardsTest", async () => {
     } catch (error) {
       expect(error.message).to.contain("This action cannot be performed while the contract is paused");
     }
+  });
+
+  it('user should be recorded as having participated in the staking program even after exiting', async () => {
+
+    const result = await stakingRewardsContract.userHasParticipatedInTheStakingProgram(user1Account.address);
+
+    expect(result).to.be.true;
   });
 
 });

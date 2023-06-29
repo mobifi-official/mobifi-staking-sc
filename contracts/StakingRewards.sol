@@ -42,7 +42,7 @@ contract StakingRewards is
     uint256 public rewardRate = 5; // Interest rate
     uint256 public rewardsDuration = 7 days; // Duration based on the interest will be calculated
     uint256 public stakingStart;
-    uint256 public constant maxStakeAmount = 5000 ether; // Maximum amount of tokens the user is allowed to stake at a given time
+    uint256 public maxStakeAmount = 5000 ether; // Maximum amount of tokens the user is allowed to stake at a given time
 
     address[] public stakers;
 
@@ -51,6 +51,7 @@ contract StakingRewards is
     uint256 private _totalSupply;
     mapping(address => uint256) private _balances;
     mapping(address => uint256) private _startStakeDate;
+    mapping(address => bool) public hasParticipatedInTheStakingProgram;
 
     /***********************************************************************
      *  CONSTRUCTOR
@@ -68,6 +69,18 @@ contract StakingRewards is
         stakingToken = IERC20(_stakingToken);
         rewardsDistribution = _rewardsDistribution;
         stakingStart = block.timestamp;
+    }
+
+    /***********************************************************************
+     * ONLY-OWNER FUNCTIONS
+     *
+     * These functions can only be called by the owner of the smart contract
+     * 
+     ***********************************************************************/
+    function adjustMaxStakeAmount(
+        uint256 _newMaxStakeAmount
+    ) external onlyOwner {
+        maxStakeAmount = _newMaxStakeAmount;
     }
 
     /***********************************************************************
@@ -120,6 +133,12 @@ contract StakingRewards is
         } else {
             return lastTimeRewardApplicable().sub(_startStakeDate[account]);
         }
+    }
+
+    function userHasParticipatedInTheStakingProgram(
+        address account
+    ) public view returns (bool) {
+        return hasParticipatedInTheStakingProgram[account];
     }
 
     // This public view function returns the current block timestamp
@@ -256,27 +275,32 @@ contract StakingRewards is
             _balances[msg.sender] == 0,
             "You already have a stake. Please withdraw to stake another amount."
         );
-        // This line checks if the sum of the current balance of the msg.sender and the amount being staked is 
-        // less than or equal to the maxStakeAmount. If the sum exceeds the maxStakeAmount, it throws an 
-        // exception with the error message "Exceeds maximum stake amount". 
+        // This line checks if the sum of the current balance of the msg.sender and the amount being staked is
+        // less than or equal to the maxStakeAmount. If the sum exceeds the maxStakeAmount, it throws an
+        // exception with the error message "Exceeds maximum stake amount".
         // This ensures that the user does not exceed the maximum allowed stake amount
         require(
             maxStakeAmount >= _balances[msg.sender].add(amount),
             "Exceeds maximum stake amount"
         );
-        
+
         // Update total amount of staking token
         _totalSupply = _totalSupply.add(amount);
         // store balance current staking action plus staked amount
         _balances[msg.sender] = _balances[msg.sender].add(amount);
         // store start staking time
         _startStakeDate[msg.sender] = block.timestamp;
-        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
         userRewardPerTokenPaid[msg.sender] = 0;
         // Add user to stakers array if they're not already in it
         if (_balances[msg.sender] == amount) {
             stakers.push(msg.sender);
         }
+
+        if (!hasParticipatedInTheStakingProgram[msg.sender]) {
+            hasParticipatedInTheStakingProgram[msg.sender] = true;
+        }
+
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
         emit Staked(msg.sender, amount);
     }
 
