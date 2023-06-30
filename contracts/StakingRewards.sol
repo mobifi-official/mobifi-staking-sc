@@ -40,7 +40,7 @@ contract StakingRewards is
     IERC20 public stakingToken; // Object that holds information about the staking contract like wallet address
     uint256 public periodFinish = 0; // Duration that the token has been staked
     uint256 public rewardRate = 5; // Interest rate
-    uint256 public rewardsDuration = 7 days; // Duration based on the interest will be calculated
+    uint256 public rewardsDuration = 30 days; // Duration based on the interest will be calculated
     uint256 public stakingStart;
     uint256 public maxStakeAmount = 5000 ether; // Maximum amount of tokens the user is allowed to stake at a given time
 
@@ -75,12 +75,12 @@ contract StakingRewards is
      * ONLY-OWNER FUNCTIONS
      *
      * These functions can only be called by the owner of the smart contract
-     * 
+     *
      ***********************************************************************/
     function adjustMaxStakeAmount(
-        uint256 _newMaxStakeAmount
+        uint256 newMaxStakeAmount
     ) external onlyOwner {
-        maxStakeAmount = _newMaxStakeAmount;
+        maxStakeAmount = newMaxStakeAmount;
     }
 
     /***********************************************************************
@@ -201,12 +201,7 @@ contract StakingRewards is
         return unclaimedRewards;
     }
 
-    /**
-     * @dev Determines whether a user can stake a certain amount of tokens based on the available rewards.
-     * @param amount The amount of tokens to be staked.
-     * @return A boolean indicating whether the user can stake the specified amount.
-     */
-    function gateKeeper(uint256 amount) public view returns (bool) {
+    modifier rewardsProgramIsStillOngoing() {
         // Calculate the remaining stake duration based on the staking start time and rewards duration
         uint256 timeSinceStart = block.timestamp.sub(stakingStart);
         uint256 stakeDuration = rewardsDuration > timeSinceStart
@@ -215,24 +210,11 @@ contract StakingRewards is
         // Check if the stake duration is greater than 0 and the current block timestamp is within the staking duration.
         // If `true`, we proceed on to calculate the amount of rewards available in the reward pool as well as
         // the amount of rewards needed based on the amount the user wants to stake
-        if (
-            stakeDuration > 0 &&
-            block.timestamp < stakingStart.add(rewardsDuration)
-        ) {
-            // Calculate the rewards needed for the specified amount based on the reward rate and stake duration
-            uint256 rewardsNeeded = amount
-                .div(100)
-                .mul(rewardRate)
-                .mul(stakeDuration)
-                .div(rewardsDuration);
-            // Get the current MOFI rewards balance in the contract
-            uint256 rewardsBalance = rewardsToken.balanceOf(address(this));
-            // Check if the MOFI rewards balance is greater than or equal to the rewards needed
-            return rewardsBalance >= rewardsNeeded;
-        } else {
-            // If the stake duration is zero or the current block timestamp is outside the staking duration, return [false]
-            return false;
-        }
+        bool programIsStillOngoing = stakeDuration > 0 &&
+            block.timestamp < stakingStart.add(rewardsDuration);
+
+        require(programIsStillOngoing, "staking is unavailable at this time");
+        _;
     }
 
     /***********************************************************************
@@ -261,7 +243,13 @@ contract StakingRewards is
      ***********************************************************************/
     function stake(
         uint256 amount
-    ) external nonReentrant notPaused rewardsBalanceSufficient(amount) {
+    )
+        external
+        nonReentrant
+        notPaused
+        rewardsProgramIsStillOngoing
+        rewardsBalanceSufficient(amount)
+    {
         // This line checks if the amount to be staked is greater than zero. If it is not, it throws
         // an exception with the error message "Cannot stake 0". This ensures that the amount being
         // staked is a positive value
@@ -320,50 +308,18 @@ contract StakingRewards is
      ***********************************************************************/
 
     function withdraw(uint256 amount) public nonReentrant {
-        // This line checks if the amount is greater than zero. If it is not, it throws an exception with the error
-        // message "Cannot withdraw 0". This ensures that the amount to be withdrawn is a positive value
         require(amount > 0, "Cannot withdraw 0");
 
-        // Check if the staker has any rewards they haven't claimed yet
-        uint256 unclaimedRewards = getUnclaimedRewardsBalanceForAccount(
-            msg.sender
-        );
+        // Calculate the reduced stake duration based on the total staked amount
+        uint256 reducedStakeDuration = getUserStakeDuration(msg.sender)
+            .mul(amount)
+            .div(_balances[msg.sender]);
 
-        // If they have any unclaimed rewards, we add this number to the mapping of the rewards
-        // paid out to this particular user. This servers the purpose
-        // of keeping track of the rewards paid out to each user
-        if (unclaimedRewards > 0) {
-            userRewardPerTokenPaid[msg.sender] = userRewardPerTokenPaid[
-                msg.sender
-            ].add(unclaimedRewards);
-
-            // We then send said rewards earned on the staked tokens to the staker's wallet address
-            rewardsToken.safeTransfer(msg.sender, unclaimedRewards);
-        }
-
-        // Calculate the reduced stake duration based on the partial withdrawal
-        uint256 reducedStakeDuration = 0;
-
-        // If the user's balance (_balances[msg.sender]) is greater than the withdrawal amount (amount), it means
-        // the user is not withdrawing their entire stake. In that case, the function [getUserStakeDuration]
-        // is called to get the stake duration for the user.
-        if (_balances[msg.sender] > amount) {
-            // The stake duration is then calculated by multiplying the user's stake duration with the difference
-            // between their current balance and the withdrawal amount, and dividing it by their current balance.
-            // The resulting value is stored in the [reducedStakeDuration] variable
-            reducedStakeDuration = getUserStakeDuration(msg.sender)
-                .mul(_balances[msg.sender].sub(amount))
-                .div(_balances[msg.sender]);
-        }
-
-        // Update the total supply and balance of the msg.sender after the withdrawal. The amount is subtracted
-        // from both _totalSupply and _balances[msg.sender] to reflect the reduced staking amount
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
 
-        // Remove user from stakers array if they've withdrawn all their tokens
         if (_balances[msg.sender] == 0) {
-            for (uint i = 0; i < stakers.length; i++) {
+            for (uint256 i = 0; i < stakers.length; i++) {
                 if (stakers[i] == msg.sender) {
                     stakers[i] = stakers[stakers.length - 1];
                     stakers.pop();
@@ -372,12 +328,10 @@ contract StakingRewards is
             }
         }
 
-        // The stake start date for the msg.sender is updated. It is set to the current timestamp (lastTimeRewardApplicable())
-        // minus the reducedStakeDuration. This ensures that the stake start date is adjusted based on the partial withdrawal
         _startStakeDate[msg.sender] = lastTimeRewardApplicable().sub(
             reducedStakeDuration
         );
-        // Transfer the amount of tokens the user staked back to them
+
         stakingToken.safeTransfer(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
     }
@@ -411,17 +365,23 @@ contract StakingRewards is
 
         for (uint256 i = 0; i < stakers.length; i++) {
             address account = stakers[i];
-            uint256 stakeUserDuration = stakingStart.add(rewardsDuration).sub(
-                _startStakeDate[account]
-            );
+            uint256 stakeUserDuration = 0;
+            if (_startStakeDate[account] <= stakingStart.add(rewardsDuration)) {
+                stakeUserDuration = stakingStart.add(rewardsDuration).sub(
+                    _startStakeDate[account]
+                );
+            }
             totalRewards = totalRewards.add(
                 calculateAccountRewards(_balances[account], stakeUserDuration)
             );
         }
 
-        uint256 stakeDuration = stakingStart.add(rewardsDuration).sub(
-            block.timestamp
-        );
+        uint256 stakeDuration = 0;
+        if (block.timestamp <= stakingStart.add(rewardsDuration)) {
+            stakeDuration = stakingStart.add(rewardsDuration).sub(
+                block.timestamp
+            );
+        }
 
         uint256 newRewards = calculateAccountRewards(amount, stakeDuration);
 

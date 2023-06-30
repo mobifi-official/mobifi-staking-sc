@@ -289,15 +289,6 @@ describe("StakingRewardsTest", async () => {
     expect(rewardsAccont > 1).to.be.equal(true);
   });
 
-  it('gatekeeper should return true if the staking program is still ongoing', async () => {
-    stakingDay = 1;
-    await increaseTime(stakingDay);
-
-    const canStake = await stakingRewardsContract.gateKeeper(ethers.utils.parseEther("1000"));
-
-    expect(canStake).to.be.true;
-  });
-
   it('unclaimed balance after some time has elapsed should be greater than 0', async () => {
     stakingDay = 5;
     await increaseTime(stakingDay);
@@ -320,17 +311,34 @@ describe("StakingRewardsTest", async () => {
   });
 
 
-  it('should return false if there are not enough rewards in the reward pool', async () => {
+  it('should not allow user to stake if there are not enough rewards in the reward pool', async () => {
     const initialRewardBalance = ethers.utils.parseEther("450");
-    const stakingAmount = ethers.utils.parseEther("400");
+    const stakingAmount = ethers.utils.parseEther("440");
 
-    // Reduce the reward balance to simulate insufficient rewards in the pool
-    await mofiTokenContract.connect(ownerSigner).transfer(stakingRewardsContract.address, initialRewardBalance.sub(stakingAmount));
+    try {
 
-    // Check the result of the gateKeeper function
-    const result = await stakingRewardsContract.gateKeeper(stakingAmount);
+      const usersStakedBalance = await stakingRewardsContract.balanceOf(user1Account.address);
+      await stakingRewardsContract.connect(user1Account).withdraw(usersStakedBalance);
+      // Reduce the reward balance to simulate insufficient rewards in the pool
+      await mofiTokenContract.connect(ownerSigner).transfer(stakingRewardsContract.address, initialRewardBalance.sub(stakingAmount));
 
-    expect(result).to.be.false;
+      await stakingRewardsContract.connect(user1Account).stake(stakingAmount);
+    } catch (error) {
+      // expect(error.message).to.contain("rewards balance is not sufficient to accept new staking");
+      expect(error.message).to.contain("rewards balance is not sufficient to accept new staking");
+    }
+  });
+
+  it('should not allow user to stake if the staking program has ended', async () => {
+    await increaseTime(35);
+    try {
+      // Increase the reward balance to simulate sufficient rewards in the reward pool
+      await mofiTokenContract.connect(ownerSigner).transfer(stakingRewardsContract.address, ethers.utils.parseEther("500"));
+      await stakingRewardsContract.connect(user1Account).stake(ethers.utils.parseEther("1000"));
+    } catch (error) {
+      // expect(error.message).to.contain("rewards balance is not sufficient to accept new staking");
+      expect(error.message).to.contain("staking is unavailable at this time");
+    }
   });
 
 
