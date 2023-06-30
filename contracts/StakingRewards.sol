@@ -40,7 +40,7 @@ contract StakingRewards is
     IERC20 public stakingToken; // Object that holds information about the staking contract like wallet address
     uint256 public periodFinish = 0; // Duration that the token has been staked
     uint256 public rewardRate = 5; // Interest rate
-    uint256 public rewardsDuration = 30 days; // Duration based on the interest will be calculated
+    uint256 public rewardsDuration = 91 days; // Duration based on the interest will be calculated
     uint256 public stakingStart;
     uint256 public maxStakeAmount = 5000 ether; // Maximum amount of tokens the user is allowed to stake at a given time
 
