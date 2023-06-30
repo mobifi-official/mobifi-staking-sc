@@ -20,12 +20,10 @@ It allows users to stake tokens and earn rewards over time, based
 on the amount of tokens they have staked. The contract leverages 
 OpenZeppelin libraries for secure and efficient implementation.*/
 
-/* ===== how to use this contract ===== */
-// Using Remix:
-// 1. Create a new workspace, delete the files in the Contracts folder. then create the exact folder structure as in this repo.
-// 2. Compile and deploy the contact, setting the owenr, distributor and staking token and reward token address
+Using Remix:
+1. Create a new workspace, delete the files in the Contracts folder. then create the exact folder structure as in this repo
+2. Compile and deploy the contact, setting the owenr, distributor and staking token and reward token address
 
-/* ===== calculate the reward program ==== */
 Project team need to decide the reward period and reward amount so that engineer can calcualte annual interest rate and set the rewardRate.
 For example:
 To calculate the amount of XYZ tokens needed to achieve an annual interest rate of 5% for a period of 7 days
