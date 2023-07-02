@@ -40,13 +40,14 @@ contract StakingRewards is
     IERC20 public stakingToken; // Object that holds information about the staking contract like wallet address
     uint256 public periodFinish = 0; // Duration that the token has been staked
     uint256 public rewardRate = 5; // Interest rate
-    uint256 public rewardsDuration = 91 days; // Duration based on the interest will be calculated
+    uint256 public rewardsDuration = 14 days; // Duration based on the interest will be calculated
     uint256 public stakingStart;
     uint256 public maxStakeAmount = 5000 ether; // Maximum amount of tokens the user is allowed to stake at a given time
 
     address[] public stakers;
 
     mapping(address => uint256) public userRewardPerTokenPaid;
+    
 
     uint256 private _totalSupply;
     mapping(address => uint256) private _balances;
@@ -254,15 +255,6 @@ contract StakingRewards is
         // an exception with the error message "Cannot stake 0". This ensures that the amount being
         // staked is a positive value
         require(amount > 0, "Cannot stake 0");
-
-        // This line ensures that the msg.sender does not have an existing stake. It checks if the
-        // balance of the msg.sender is zero. If the balance is not zero, it throws an exception with
-        // the error message "You already have a stake. Please withdraw to stake another amount."
-        // This prevents users from staking additional amounts without first withdrawing their previous stake
-        require(
-            _balances[msg.sender] == 0,
-            "You already have a stake. Please withdraw to stake another amount."
-        );
         // This line checks if the sum of the current balance of the msg.sender and the amount being staked is
         // less than or equal to the maxStakeAmount. If the sum exceeds the maxStakeAmount, it throws an
         // exception with the error message "Exceeds maximum stake amount".

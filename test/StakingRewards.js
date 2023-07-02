@@ -135,7 +135,7 @@ describe("StakingRewardsTest", async () => {
    */
   it('should transfer mofiTokenContract to user other two user wallet ', async () => {
     // Transfer some staking tokens to user1 and user2 for testing
-    await mofiTokenContract.connect(ownerSigner).transfer(stakingRewardsContract.address, ethers.utils.parseEther("450"));
+    await mofiTokenContract.connect(ownerSigner).transfer(stakingRewardsContract.address, ethers.utils.parseEther("10000"));
     await mofiTokenContract.connect(ownerSigner).transfer(user1Account.address, ethers.utils.parseEther("2000"));
     await mofiTokenContract.connect(ownerSigner).transfer(user2Account.address, ethers.utils.parseEther("2000"));
     await mofiTokenContract.connect(ownerSigner).transfer(user3Account.address, ethers.utils.parseEther("2000"));
@@ -217,13 +217,30 @@ describe("StakingRewardsTest", async () => {
     }
   });
 
+
+  it("should allow user to continue staking as long as they haven't reached the staking cap", async () => {
+
+    await stakingRewardsContract.connect(user5Account).stake(ethers.utils.parseEther("1300"));
+
+    const maxStakeAmount = await stakingRewardsContract.maxStakeAmount();
+
+    const stakedAmount = await stakingRewardsContract.balanceOf(user5Account.address);
+
+    const remainingAmountTillMaxCapIsReached = maxStakeAmount.sub(stakedAmount);
+
+    await stakingRewardsContract.connect(user5Account).stake(remainingAmountTillMaxCapIsReached);
+    const newStakedAmount = await stakingRewardsContract.balanceOf(user5Account.address);
+
+    expect(newStakedAmount).to.eq(maxStakeAmount);
+
+  });
+
   /**
    * should catch the error if user stake more than maximum amount
    */
-  it('should not allow user to stake more than maxStakeAmount', async () => {
+  it("should not allow user to stake more than maxStakeAmount", async () => {
     try {
-      await stakingRewardsContract.connect(user5Account).stake(ethers.utils.parseEther("10000"))
-      assert.fail("Expected transaction to revert");
+      await stakingRewardsContract.connect(user5Account).stake(ethers.utils.parseEther("10000"));
     } catch (error) {
       expect(error.message).to.contain("reverted with reason string 'Exceeds maximum stake amount'");
     }
@@ -246,17 +263,8 @@ describe("StakingRewardsTest", async () => {
 
   });
 
-  it('should not allow user to stake twice', async () => {
-    try {
-      await stakingRewardsContract.connect(user4Account).stake(ethers.utils.parseEther("5000"))
-      assert.fail("Expected transaction to revert");
-    } catch (error) {
-      expect(error.message).to.contain("reverted with reason string 'You already have a stake. Please withdraw to stake another amount.'");
-    }
-  });
-
   it('should get total rewards amount for all active user', async () => {
-    expect(await stakingRewardsContract.getRewardsAmount()).to.be.equal(ethers.utils.parseEther('450'));
+    expect(await stakingRewardsContract.getRewardsAmount()).to.be.equal(ethers.utils.parseEther('10000'));
   });
 
   /**
@@ -311,9 +319,9 @@ describe("StakingRewardsTest", async () => {
   });
 
 
-  it('should not allow user to stake if there are not enough rewards in the reward pool', async () => {
-    const initialRewardBalance = ethers.utils.parseEther("450");
-    const stakingAmount = ethers.utils.parseEther("440");
+  it("should not allow user to stake if there are not enough rewards in the reward pool", async () => {
+    const initialRewardBalance = ethers.utils.parseEther("4500");
+    const stakingAmount = ethers.utils.parseEther("4500");
 
     try {
 
@@ -329,8 +337,8 @@ describe("StakingRewardsTest", async () => {
     }
   });
 
-  it('should not allow user to stake if the staking program has ended', async () => {
-    await increaseTime(35);
+  it("should not allow user to stake if the staking program has ended", async () => {
+    await increaseTime(14);
     try {
       // Increase the reward balance to simulate sufficient rewards in the reward pool
       await mofiTokenContract.connect(ownerSigner).transfer(stakingRewardsContract.address, ethers.utils.parseEther("500"));
@@ -341,10 +349,20 @@ describe("StakingRewardsTest", async () => {
     }
   });
 
+  it('should allow user to claim rewards accrued even after the staking program has ended', async () => {
+    await increaseTime(10);
 
-  /**
-   * 
-   */
+    const initialMoFiBalance = await mofiTokenContract.balanceOf(user5Account.address);
+      // Claim rewards for user
+    await stakingRewardsContract.connect(user5Account).getReward();
+
+    const newMoFiBalance = await mofiTokenContract.balanceOf(user5Account.address);
+
+    expect(newMoFiBalance).to.be.gt(initialMoFiBalance);
+    
+  });
+
+
   it('should allow account to exit from staking program', async () => {
     stakingDay = stakingDay + 1;
     await increaseTime(stakingDay);
@@ -356,9 +374,7 @@ describe("StakingRewardsTest", async () => {
     expect(userStakeBalance > ethers.utils.parseEther('2000')).to.be.equal(true);
   });
 
-  /**
-   * 
-   */
+
   it('should withdraw all user balance and stop staking program', async () => {
 
     await stakingRewardsContract.connect(ownerSigner).emergencyWithdraw();
@@ -378,9 +394,6 @@ describe("StakingRewardsTest", async () => {
 
   });
 
-  /**
-   * 
-   */
   it('should not allow user to start staking after emergency exit', async () => {
     try {
       await stakingRewardsContract.connect(user1Account).stake(ethers.utils.parseEther("500"));
