@@ -321,16 +321,16 @@ describe("StakingRewardsTest", async () => {
 
   it("should not allow user to stake if there are not enough rewards in the reward pool", async () => {
     const initialRewardBalance = ethers.utils.parseEther("4500");
-    const stakingAmount = ethers.utils.parseEther("4500");
+    const reductionAmount = ethers.utils.parseEther("4500");
 
     try {
 
       const usersStakedBalance = await stakingRewardsContract.balanceOf(user1Account.address);
       await stakingRewardsContract.connect(user1Account).withdraw(usersStakedBalance);
       // Reduce the reward balance to simulate insufficient rewards in the pool
-      await mofiTokenContract.connect(ownerSigner).transfer(stakingRewardsContract.address, initialRewardBalance.sub(stakingAmount));
+      await mofiTokenContract.connect(ownerSigner).transfer(stakingRewardsContract.address, initialRewardBalance.sub(reductionAmount));
 
-      await stakingRewardsContract.connect(user1Account).stake(stakingAmount);
+      await stakingRewardsContract.connect(user1Account).stake(ethers.utils.parseEther("300"));
     } catch (error) {
       // expect(error.message).to.contain("rewards balance is not sufficient to accept new staking");
       expect(error.message).to.contain("rewards balance is not sufficient to accept new staking");

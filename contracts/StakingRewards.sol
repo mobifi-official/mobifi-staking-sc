@@ -36,23 +36,27 @@ contract StakingRewards is
      *  VARIABLES
      ***********************************************************************/
 
-    IERC20 public rewardsToken; // Object that holds information about the reward pool like wallet address
-    IERC20 public stakingToken; // Object that holds information about the staking contract like wallet address
-    uint256 public periodFinish = 0; // Duration that the token has been staked
-    uint256 public rewardRate = 5; // Interest rate
-    uint256 public rewardsDuration = 14 days; // Duration based on the interest will be calculated
+    // Object that holds information about the reward pool like wallet address
+    IERC20 public rewardsToken;
+    // Object that holds information about the staking contract like wallet address
+    IERC20 public stakingToken;
+    // Duration that the token has been staked
+    uint256 public periodFinish = 0;
+    // Interest rate
+    uint256 public rewardRate = 5;
+    // Duration based on the interest will be calculated
+    uint256 public rewardsDuration = 14 days;
     uint256 public stakingStart;
-    uint256 public maxStakeAmount = 5000 ether; // Maximum amount of tokens the user is allowed to stake at a given time
+    // Maximum amount of tokens the user is allowed to stake for the duration of the program
+    uint256 public maxStakeAmount = 5000 ether;
 
     address[] public stakers;
-
-    mapping(address => uint256) public userRewardPerTokenPaid;
-    
 
     uint256 private _totalSupply;
     mapping(address => uint256) private _balances;
     mapping(address => uint256) private _startStakeDate;
     mapping(address => bool) public hasParticipatedInTheStakingProgram;
+    mapping(address => uint256) public userRewardPerTokenPaid;
 
     /***********************************************************************
      *  CONSTRUCTOR
