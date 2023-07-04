@@ -41,7 +41,6 @@ contract StakingRewards is
     IERC20 public stakingToken;
     uint256 public periodFinish = 0;
     uint256 public rewardRate = 0;
-    uint256 public apy = 10;
     uint256 public rewardsDuration = 14 days;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
@@ -61,6 +60,14 @@ contract StakingRewards is
 
     /* ========== CONSTRUCTOR ========== */
 
+    /**
+     * @dev Constructor function
+     * @param _owner The address of the contract owner
+     * @param _rewardsDistribution The address of the rewards distribution contract. It can be the same as [owner] above
+     * @param _rewardsToken The address of the rewards token contract
+     * @param _stakingToken The address of the staking token contract
+     * @param _maxStakingCapForProgram The maximum staking cap for the program
+     */
     constructor(
         address _owner,
         address _rewardsDistribution,
@@ -75,36 +82,32 @@ contract StakingRewards is
         maxStakingCapForProgram = _maxStakingCapForProgram;
     }
 
-    /***********************************************************************
-     * ONLY-OWNER FUNCTIONS
-     *
-     * These functions can only be called by the owner of the smart contract
-     *
-     * Here's what the owner can change:
-     * 1. The [maxStakeAmount], which represents the maximum amount of MoFi
-     *    a user can stake per staking program
-     *
-     ***********************************************************************/
-    function adjustMaxStakeAmount(
-        uint256 _newMaxStakeAmount
-    ) external onlyOwner {
-        maxStakeAmount = _newMaxStakeAmount;
-    }
-
-    function adjustStakingCapForProgram(uint256 _newCap) external onlyOwner {
-        maxStakingCapForProgram = _newCap;
-    }
-
     /* ========== VIEWS ========== */
 
+    /**
+
+    * @dev Returns the total supply of staked tokens.
+    * @return The total supply of staked tokens.
+    */
     function totalSupply() external view returns (uint256) {
         return _totalSupply;
     }
 
+    /**
+
+    * @dev Returns the balance of staked tokens for a specific account.
+    * @param account The address of the account.
+    * @return The balance of staked tokens for the account.
+    */
     function balanceOf(address account) external view returns (uint256) {
         return _balances[account];
     }
 
+    /**
+
+    * @dev Returns the last time rewards were applicable.
+    * @return The last time rewards were applicable.
+    */
     function lastTimeRewardApplicable() public view returns (uint256) {
         return block.timestamp < periodFinish ? block.timestamp : periodFinish;
     }
@@ -124,6 +127,11 @@ contract StakingRewards is
         return hasParticipatedInTheStakingProgram[account];
     }
 
+    /**
+
+    * @dev Returns the current reward per token.
+    * @return The current reward per token.
+    */
     function rewardPerToken() public view returns (uint256) {
         if (_totalSupply == 0) {
             return rewardPerTokenStored;
@@ -138,6 +146,12 @@ contract StakingRewards is
             );
     }
 
+    /**
+
+    * @dev Returns the amount of rewards earned by an account.
+    * @param account The address of the account.
+    * @return The amount of rewards earned by the account.
+    */
     function earned(address account) public view returns (uint256) {
         return
             _balances[account]
@@ -146,8 +160,11 @@ contract StakingRewards is
                 .add(rewards[account]);
     }
 
+    /**
 
-
+    * @dev Returns the total reward amount for the specified duration.
+    * @return The total reward amount for the duration.
+    */
     function getRewardForDuration() external view returns (uint256) {
         return rewardRate.mul(rewardsDuration);
     }
@@ -194,6 +211,11 @@ contract StakingRewards is
         emit Staked(msg.sender, amount);
     }
 
+    /**
+
+    * @dev Withdraws a specified amount of staking tokens from the contract and transfers them back to the sender.
+    * @param amount The amount of staking tokens to withdraw.
+    */
     function withdraw(
         uint256 amount
     ) public nonReentrant updateReward(msg.sender) {
@@ -204,6 +226,10 @@ contract StakingRewards is
         emit Withdrawn(msg.sender, amount);
     }
 
+    /**
+
+    * @dev Claims and transfers the accumulated rewards to the sender.
+    */
     function getReward() public nonReentrant updateReward(msg.sender) {
         uint256 reward = rewards[msg.sender];
         if (reward > 0) {
@@ -213,6 +239,10 @@ contract StakingRewards is
         }
     }
 
+    /**
+
+    * @dev Withdraws the full staking balance and claims the accumulated rewards.
+    */
     function exit() external {
         withdraw(_balances[msg.sender]);
         getReward();
@@ -220,6 +250,13 @@ contract StakingRewards is
 
     /* ========== RESTRICTED FUNCTIONS ========== */
 
+    /**
+
+    @dev Notifies the contract about the new reward amount to be distributed to stakers.
+    In other words, it sets the reward amount for the upcoming rewards period
+    Only the rewards distribution address can call this function.
+    @param reward The amount of reward to be distributed.
+    */ 
     function notifyRewardAmount(
         uint256 reward
     ) external onlyRewardsDistribution updateReward(address(0)) {
@@ -268,8 +305,35 @@ contract StakingRewards is
         emit RewardsDurationUpdated(rewardsDuration);
     }
 
+    /**
+    * @dev Adjusts the maximum stake amount allowed per user.
+    * @param _newMaxStakeAmount The new maximum stake amount.
+     Only callable by the contract owner.
+    */
+    function adjustMaxStakeAmount(
+        uint256 _newMaxStakeAmount
+    ) external onlyOwner {
+        maxStakeAmount = _newMaxStakeAmount;
+    }
+
+    /**
+
+    * @dev Adjusts the staking cap for the program.
+    * @param _newCap The new staking cap for the program.
+    Only callable by the contract owner.
+    */
+    function adjustStakingCapForProgram(uint256 _newCap) external onlyOwner {
+        maxStakingCapForProgram = _newCap;
+    }
+
     /* ========== MODIFIERS ========== */
 
+    /**
+
+    @dev Modifier that updates the reward variables before executing the function.
+    It calculates and updates the rewardPerTokenStored and lastUpdateTime.
+    If the account is not the zero address, it also updates the rewards and userRewardPerTokenPaid for the account.
+    */
     modifier updateReward(address account) {
         rewardPerTokenStored = rewardPerToken();
         lastUpdateTime = lastTimeRewardApplicable();
@@ -280,9 +344,9 @@ contract StakingRewards is
         _;
     }
 
-    /// This modifier is used to check whether the staking program is still ongoing
-    /// If it is not, it returns `false`, and the user will not be able to continue
-    /// with the staking activity
+    // This modifier is used to check whether the staking program is still ongoing
+    // If it is not, it returns `false`, and the user will not be able to continue
+    // with the staking activity
     modifier rewardsProgramIsStillOngoing() {
         // Calculate the remaining stake duration based on the staking start time and rewards duration
         uint256 timeSinceStart = block.timestamp.sub(stakingStart);
