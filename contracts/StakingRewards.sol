@@ -347,7 +347,7 @@ contract StakingRewards is
     // This modifier is used to check whether the staking program is still ongoing
     modifier rewardsProgramIsStillOngoing() {
         require(
-            block.timestamp <= stakingStart.add(rewardsDuration),
+            block.timestamp < stakingStart.add(rewardsDuration),
             "staking program duration has ended"
         );
         _;
