@@ -345,8 +345,6 @@ contract StakingRewards is
     }
 
     // This modifier is used to check whether the staking program is still ongoing
-    // If it is not, it returns `false`, and the user will not be able to continue
-    // with the staking activity
     modifier rewardsProgramIsStillOngoing() {
         require(
             block.timestamp <= stakingStart.add(rewardsDuration),
