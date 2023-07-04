@@ -256,7 +256,7 @@ contract StakingRewards is
     In other words, it sets the reward amount for the upcoming rewards period
     Only the rewards distribution address can call this function.
     @param reward The amount of reward to be distributed.
-    */ 
+    */
     function notifyRewardAmount(
         uint256 reward
     ) external onlyRewardsDistribution updateReward(address(0)) {
@@ -348,16 +348,10 @@ contract StakingRewards is
     // If it is not, it returns `false`, and the user will not be able to continue
     // with the staking activity
     modifier rewardsProgramIsStillOngoing() {
-        // Calculate the remaining stake duration based on the staking start time and rewards duration
-        uint256 timeSinceStart = block.timestamp.sub(stakingStart);
-        uint256 stakeDuration = rewardsDuration > timeSinceStart
-            ? rewardsDuration.sub(timeSinceStart)
-            : 0;
-        // Check if the stake duration is greater than 0 and the current block timestamp is within the staking duration.
-        bool programIsStillOngoing = stakeDuration > 0 &&
-            block.timestamp < stakingStart.add(rewardsDuration);
-
-        require(programIsStillOngoing, "staking program duration has ended");
+        require(
+            block.timestamp <= stakingStart.add(rewardsDuration),
+            "staking program duration has ended"
+        );
         _;
     }
 
