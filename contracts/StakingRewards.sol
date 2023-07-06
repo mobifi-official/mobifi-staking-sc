@@ -41,14 +41,11 @@ contract StakingRewards is
     IERC20 public stakingToken;
     uint256 public periodFinish = 0;
     uint256 public rewardRate = 0;
-    uint256 public rewardsDuration = 14 days;
+    uint256 public rewardsDuration = 0 days;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
-    // Will be used to record when the staking program started
-    uint256 public stakingStart;
     // Maximum amount of tokens the user is allowed to stake for the duration of the program
-    uint256 public maxStakeAmount = 10000 ether;
-
+    uint256 public maxStakeAmount = 0 ether;
     uint256 public maxStakingCapForProgram;
 
     mapping(address => uint256) public userRewardPerTokenPaid;
@@ -78,7 +75,6 @@ contract StakingRewards is
         rewardsToken = IERC20(_rewardsToken);
         stakingToken = IERC20(_stakingToken);
         rewardsDistribution = _rewardsDistribution;
-        stakingStart = block.timestamp;
         maxStakingCapForProgram = _maxStakingCapForProgram;
     }
 
@@ -347,7 +343,7 @@ contract StakingRewards is
     // This modifier is used to check whether the staking program is still ongoing
     modifier rewardsProgramIsStillOngoing() {
         require(
-            block.timestamp < stakingStart.add(rewardsDuration),
+            block.timestamp < periodFinish,
             "staking program duration has ended"
         );
         _;
