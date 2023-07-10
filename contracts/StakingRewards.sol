@@ -7,9 +7,9 @@
  */
 
 // SPDX-License-Identifier: MIT
+
 pragma solidity ^0.5.16;
 
-// use the raw code base with v2.3.0 otherwise it throws out error
 // import "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v2.3.0/contracts/math/SafeMath.sol";
 // import "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v2.3.0/contracts/token/ERC20/ERC20Detailed.sol";
 // import "https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-contracts/v2.3.0/contracts/token/ERC20/SafeERC20.sol";
@@ -21,12 +21,13 @@ import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 // Inheritance
-// import "./interfaces/IStakingRewards.sol"; // TODO: match the logic for this interface
+import "./interfaces/IStakingRewards.sol";
 import "./RewardsDistributionRecipient.sol";
 import "./Pausable.sol";
-import "hardhat/console.sol";
 
+// https://docs.synthetix.io/contracts/source/contracts/stakingrewards
 contract StakingRewards is
+    IStakingRewards,
     RewardsDistributionRecipient,
     ReentrancyGuard,
     Pausable
@@ -34,308 +35,249 @@ contract StakingRewards is
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
-    /***********************************************************************
-     *  VARIABLES
-     ***********************************************************************/
+    /* ========== STATE VARIABLES ========== */
 
-    IERC20 public rewardsToken; // Object that holds information about the reward pool like wallet address
-    IERC20 public stakingToken; // Object that holds information about the staking contract like wallet address
-    uint256 public periodFinish = 0; // Duration that the token has been staked
-    uint256 public rewardRate = 5; // Interest rate
-    uint256 public rewardsDuration = 3 days; // Duration based on the interest will be calculated
-    uint256 public stakingStart;
-
-    uint256 public constant maxStakeAmount = 5000 ether;
-
-    address[] public stakers;
+    IERC20 public rewardsToken;
+    IERC20 public stakingToken;
+    uint256 public periodFinish = 0;
+    uint256 public rewardRate = 0;
+    uint256 public rewardsDuration = 0 days;
+    uint256 public lastUpdateTime;
+    uint256 public rewardPerTokenStored;
+    // Maximum amount of tokens the user is allowed to stake for the duration of the program
+    uint256 public maxStakeAmount = 0 ether;
+    uint256 public maxStakingCapForProgram;
 
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
+    mapping(address => bool) public hasParticipatedInTheStakingProgram;
 
     uint256 private _totalSupply;
     mapping(address => uint256) private _balances;
-    mapping(address => uint256) private _startStakeDate;
 
-    /***********************************************************************
-     *  CONSTRUCTOR
-     *  initializes the contract with the addresses of the owner,
-     *  rewards distribution, rewards token, and staking token.
-     *  _owner and _rewardsDistribution address can be the same address.
-     ***********************************************************************/
+    /* ========== CONSTRUCTOR ========== */
 
+    /**
+     * @dev Constructor function
+     * @param _owner The address of the contract owner
+     * @param _rewardsDistribution The address of the rewards distribution contract. It can be the same as [owner] above
+     * @param _rewardsToken The address of the rewards token contract
+     * @param _stakingToken The address of the staking token contract
+     * @param _maxStakingCapForProgram The maximum staking cap for the program
+     */
     constructor(
         address _owner,
         address _rewardsDistribution,
         address _rewardsToken,
-        address _stakingToken
+        address _stakingToken,
+        uint256 _maxStakingCapForProgram
     ) public Owned(_owner) {
         rewardsToken = IERC20(_rewardsToken);
         stakingToken = IERC20(_stakingToken);
         rewardsDistribution = _rewardsDistribution;
-        stakingStart = block.timestamp;
+        maxStakingCapForProgram = _maxStakingCapForProgram;
     }
 
-    /***********************************************************************
-     * READ-ONLY FUNCTIONS
-     *
-     * Various view functions are provided to retrieve information
-     * about the contract state,
-     * such as total supply, user balances, rewards per token, earned rewards,
-     * and reward duration i.e., read-only functions
-     ***********************************************************************/
+    /* ========== VIEWS ========== */
 
+    /**
+
+    * @dev Returns the total supply of staked tokens.
+    * @return The total supply of staked tokens.
+    */
     function totalSupply() external view returns (uint256) {
         return _totalSupply;
     }
 
+    /**
+
+    * @dev Returns the balance of staked tokens for a specific account.
+    * @param account The address of the account.
+    * @return The balance of staked tokens for the account.
+    */
     function balanceOf(address account) external view returns (uint256) {
         return _balances[account];
     }
 
-    // This fuctions checks if the user has exeeded the max reward period (i.365 day).
-    // If yes he will get interest rate for 365 days if not we need to compute
-    // his staking duration until the emergencywithdraw = (TODAY - WHEN USED STARTED staking)
-    function lastTimeRewardApplicable() public view returns (uint256) {
-        return
-            block.timestamp < stakingStart.add(rewardsDuration)
-                ? block.timestamp
-                : stakingStart.add(rewardsDuration);
-    }
+    /**
 
-    function calculateAccountRewards(
-        uint256 amount,
-        uint256 stakeDuration
-    ) public view returns (uint256) {
-        if (amount < 0) {
-            return 0;
-        } else {
-            return
-                amount.div(100).mul(rewardRate).mul(stakeDuration).div(
-                    rewardsDuration
-                );
-        }
+    * @dev Returns the last time rewards were applicable.
+    * @return The last time rewards were applicable.
+    */
+    function lastTimeRewardApplicable() public view returns (uint256) {
+        return block.timestamp < periodFinish ? block.timestamp : periodFinish;
     }
 
     /**
-     * @dev Determines whether a user can stake a certain amount of tokens based on the available rewards.
-     * @param amount The amount of tokens to be staked.
-     * @return A boolean indicating whether the user can stake the specified amount.
+     * @dev Returns whether a given user, identified by their address has participated
+     * in the staking program. By `participated in the staking program", we mean if
+     * they have staked at-least once. This information is required in the MoBiFi FE
+     * app to how the relevant cards in the wallet page depending on what this method
+     * returns
+     * @param account The address of the account.
+     * @return Whether or not a user has staked at-least once
      */
- function gateKeeper(uint256 amount) external view returns (bool) {
-    // Calculate the remaining stake duration based on the staking start time and rewards duration
-    uint256 timeSinceStart = block.timestamp.sub(stakingStart);
-    uint256 stakeDuration = rewardsDuration > timeSinceStart ? rewardsDuration.sub(timeSinceStart) : 0;
-
-    // Check if the stake duration is greater than 0 and the current block timestamp is within the staking duration.
-    // If `true`, we proceed on to calculate the amount of rewards available in the reward pool as well as
-    // the amount of rewards needed based on the amount the user wants to stake
-    if (stakeDuration > 0 && block.timestamp < stakingStart.add(rewardsDuration)) {
-        // Calculate the rewards needed for the specified amount based on the reward rate and stake duration
-        uint256 rewardsNeeded = amount.div(100).mul(rewardRate).mul(stakeDuration).div(rewardsDuration);
-
-        // Get the current MOFI rewards balance in the contract
-        uint256 rewardsBalance = rewardsToken.balanceOf(address(this));
-
-        // Check if the MOFI rewards balance is greater than or equal to the rewards needed
-        return rewardsBalance >= rewardsNeeded;
-    } else {
-        // If the stake duration is zero or the current block timestamp is outside the staking duration, return [false]
-        return false;
-    }
-}
-
-
-    function getUserStakeDuration(
+    function userHasParticipatedInTheStakingProgram(
         address account
-    ) public view returns (uint256) {
-        return lastTimeRewardApplicable().sub(_startStakeDate[account]);
+    ) public view returns (bool) {
+        return hasParticipatedInTheStakingProgram[account];
     }
 
-    function getCurrentBlockTime() public view returns (uint256) {
-        return block.timestamp;
-    }
+    /**
 
-    function earned(address account) public view returns (uint256) {
+    * @dev Returns the current reward per token.
+    * @return The current reward per token.
+    */
+    function rewardPerToken() public view returns (uint256) {
+        if (_totalSupply == 0) {
+            return rewardPerTokenStored;
+        }
         return
-            calculateAccountRewards(
-                _balances[account],
-                getUserStakeDuration(account)
+            rewardPerTokenStored.add(
+                lastTimeRewardApplicable()
+                    .sub(lastUpdateTime)
+                    .mul(rewardRate)
+                    .mul(1e18)
+                    .div(_totalSupply)
             );
     }
 
+    /**
+
+    * @dev Returns the amount of rewards earned by an account.
+    * @param account The address of the account.
+    * @return The amount of rewards earned by the account.
+    */
+    function earned(address account) public view returns (uint256) {
+        return
+            _balances[account]
+                .mul(rewardPerToken().sub(userRewardPerTokenPaid[account]))
+                .div(1e18)
+                .add(rewards[account]);
+    }
+
+    /**
+
+    * @dev Returns the total reward amount for the specified duration.
+    * @return The total reward amount for the duration.
+    */
     function getRewardForDuration() external view returns (uint256) {
         return rewardRate.mul(rewardsDuration);
     }
 
-    function getStartDateAccountStake(
-        address account
-    ) external view returns (uint256) {
-        return _startStakeDate[account];
-    }
+    /* ========== MUTATIVE FUNCTIONS ========== */
 
-    function getRewardsAmount() public view returns (uint256) {
-        if (address(stakingToken) == address(rewardsToken)) {
-            return rewardsToken.balanceOf(address(this)).sub(_totalSupply);
-        } else {
-            return rewardsToken.balanceOf(address(this));
-        }
-    }
-
-    /***********************************************************************
-     * FUNCTIONS
-     *
-     * These functions enable users to interact with the contract and
-     * perform actions such as
-     * stake: Stake a specified amount of tokens.
-     * withdraw: Withdraw a specified amount of staked tokens.
-     * getReward: Claim earned rewards.
-     * exit: Withdraw all staked tokens and claim all earned rewards.
-     ***********************************************************************/
-
-    /***********************************************************************
-     * Function: stake
-     * Staking plays the role of depositing. It takes an amount of tokens
+    /**
+     * @dev Staking plays the role of depositing. It takes an amount of tokens
      * from a wallet A and it transfers it to deployer of the contract (i.e. wallet B),
      * where it will be held for a period of time in order
      * to produce a return to the user A paid by the user B.
+     * @param amount --> the amount of tokens to be deposited
      *
-     * Inputs
-     * 1. the amount of tokens to be deposited
-     *
-     * Outputs
-     * 1. An updated balance of tokens which are currently staked
-     ***********************************************************************/
+     */
     function stake(
         uint256 amount
-    ) external nonReentrant notPaused rewardsBalanceSufficient(amount) {
+    )
+        external
+        nonReentrant
+        notPaused
+        rewardsProgramIsStillOngoing
+        gateKeeper(amount)
+        updateReward(msg.sender)
+    {
+        // This line checks if the amount to be staked is greater than zero. If it is not, it throws
+        // an exception with the error message "Cannot stake 0".
         require(amount > 0, "Cannot stake 0");
 
-        require(
-            _balances[msg.sender] <= 0,
-            "You already stake please exit to stake another amount"
+        // Calculate the remaining available stake amount by subtracting the current staked amount
+        // from the maxStakeAmount variable
+        uint256 remainingStakeAmount = maxStakeAmount.sub(
+            _balances[msg.sender]
         );
 
-        require(
-            maxStakeAmount >= _balances[msg.sender].add(amount),
-            "Exceeds maximum stake amount"
-        );
+        // Check if the remaining stake amount is greater than or equal to the amount being staked
+        require(remainingStakeAmount >= amount, "Exceeds maximum stake amount");
 
-        // update total amount of staking token
         _totalSupply = _totalSupply.add(amount);
-        // store balance current staking action plus staked amount
         _balances[msg.sender] = _balances[msg.sender].add(amount);
-        // store start staking time
-        _startStakeDate[msg.sender] = block.timestamp;
-        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
-        userRewardPerTokenPaid[msg.sender] = 0;
-
-        // Add user to stakers array if they're not already in it
-        if (_balances[msg.sender] == amount) {
-            stakers.push(msg.sender);
+        if (!hasParticipatedInTheStakingProgram[msg.sender]) {
+            hasParticipatedInTheStakingProgram[msg.sender] = true;
         }
-
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
         emit Staked(msg.sender, amount);
     }
 
-    /***********************************************************************
-     * Function: withdraw
-     *
-     * Input
-     * 1. the amount of tokens to be deposited
-     *
-     * Process
-     * It takes an amount of tokens
-     * from the deployer of the contract (i.e. wallet B) and it transfers
-     * it back to the wallet A
-     *
-     * Output
-     * 1. An updated balance of tokens which are currently staked
-     ***********************************************************************/
+    /**
 
-    function withdraw(uint256 amount) public nonReentrant {
+    * @dev Withdraws a specified amount of staking tokens from the contract and transfers them back to the sender.
+    * @param amount The amount of staking tokens to withdraw.
+    */
+    function withdraw(
+        uint256 amount
+    ) public nonReentrant updateReward(msg.sender) {
         require(amount > 0, "Cannot withdraw 0");
-
-        // update total suplay of staking token
         _totalSupply = _totalSupply.sub(amount);
-        // update account balance
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
-        _startStakeDate[msg.sender] = 0;
-
-        // Remove user from stakers array if they've withdrawn all their tokens
-        if (_balances[msg.sender] == 0) {
-            for (uint i = 0; i < stakers.length; i++) {
-                if (stakers[i] == msg.sender) {
-                    stakers[i] = stakers[stakers.length - 1];
-                    stakers.pop();
-                    break;
-                }
-            }
-        }
-
         stakingToken.safeTransfer(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
     }
 
-    function getReward() public nonReentrant {
-        uint256 reward = calculateAccountRewards(
-            _balances[msg.sender],
-            getUserStakeDuration(msg.sender)
-        );
+    /**
+
+    * @dev Claims and transfers the accumulated rewards to the sender.
+    */
+    function getReward() public nonReentrant updateReward(msg.sender) {
+        uint256 reward = rewards[msg.sender];
         if (reward > 0) {
             rewards[msg.sender] = 0;
-            userRewardPerTokenPaid[msg.sender] = userRewardPerTokenPaid[
-                msg.sender
-            ].add(reward);
-
             rewardsToken.safeTransfer(msg.sender, reward);
             emit RewardPaid(msg.sender, reward);
         }
     }
 
+    /**
+
+    * @dev Withdraws the full staking balance and claims the accumulated rewards.
+    */
     function exit() external {
-        getReward();
         withdraw(_balances[msg.sender]);
+        getReward();
     }
 
-    /***********************************************************************
-     * INTERNAL FUNCTIONS
-     ***********************************************************************/
-    modifier rewardsBalanceSufficient(uint256 amount) {
-        uint256 totalRewards = 0;
+    /* ========== RESTRICTED FUNCTIONS ========== */
 
-        for (uint256 i = 0; i < stakers.length; i++) {
-            address account = stakers[i];
-            uint256 stakeUserDuration = stakingStart.add(rewardsDuration).sub(
-                _startStakeDate[account]
-            );
-            totalRewards = totalRewards.add(
-                calculateAccountRewards(_balances[account], stakeUserDuration)
-            );
+    /**
+
+    @dev Notifies the contract about the new reward amount to be distributed to stakers.
+    In other words, it sets the reward amount for the upcoming rewards period
+    Only the rewards distribution address can call this function.
+    @param reward The amount of reward to be distributed.
+    */
+    function notifyRewardAmount(
+        uint256 reward
+    ) external onlyRewardsDistribution updateReward(address(0)) {
+        if (block.timestamp >= periodFinish) {
+            rewardRate = reward.div(rewardsDuration);
+        } else {
+            uint256 remaining = periodFinish.sub(block.timestamp);
+            uint256 leftover = remaining.mul(rewardRate);
+            rewardRate = reward.add(leftover).div(rewardsDuration);
         }
 
-        uint256 stakeDuration = stakingStart.add(rewardsDuration).sub(
-            block.timestamp
-        );
-
-        uint256 newRewards = calculateAccountRewards(amount, stakeDuration);
-
-        uint256 rewardsAmount = getRewardsAmount();
-
+        // Ensure the provided reward amount is not more than the balance in the contract.
+        // This keeps the reward rate in the right range, preventing overflows due to
+        // very high values of rewardRate in the earned and rewardsPerToken functions;
+        // Reward + leftover must be less than 2^256 / 10^18 to avoid overflow.
+        uint balance = rewardsToken.balanceOf(address(this));
         require(
-            rewardsAmount >= totalRewards,
-            "rewards balance is not sufficient to accept new staking"
+            rewardRate <= balance.div(rewardsDuration),
+            "Provided reward too high"
         );
-        _;
-    }
 
-    /***********************************************************************
-     * RESTRICTED FUNCTIONS
-     *
-     * Functions that can only be called by specific roles, such as the owner or rewards distributor
-     * recoverERC20: Allows the owner to recover ERC20 tokens accidentally sent to the contract.
-     * emergencyWithdraw:
-     * restartStakingProgram:
-     ***********************************************************************/
+        lastUpdateTime = block.timestamp;
+        periodFinish = block.timestamp.add(rewardsDuration);
+        emit RewardAdded(reward);
+    }
 
     // Added to support recovering LP Rewards from other systems such as BAL to be distributed to holders
     function recoverERC20(
@@ -359,52 +301,67 @@ contract StakingRewards is
         emit RewardsDurationUpdated(rewardsDuration);
     }
 
-    function emergencyWithdraw() external onlyOwner {
-        uint256 totalWithdrawRewards = 0;
-        // Iterate through all stakers
-        for (uint i = 0; i < stakers.length; i++) {
-            // Transfer staked tokens back to staker
-
-            // The amount of MOFIs the user had deposited
-            uint amountToRefund = _balances[stakers[i]];
-
-            // Compute the interest rate to be received based
-            // on the dates that the user has been in the program (until emergency reward)
-            uint userRewards = calculateAccountRewards(
-                _balances[stakers[i]],
-                getUserStakeDuration(stakers[i])
-            ).sub(userRewardPerTokenPaid[stakers[i]]);
-
-            totalWithdrawRewards = totalWithdrawRewards.add(userRewards);
-
-            _balances[stakers[i]] = 0;
-
-            _totalSupply = _totalSupply.sub(amountToRefund);
-            periodFinish = block.timestamp;
-            stakingToken.safeTransfer(stakers[i], amountToRefund);
-            rewardsToken.safeTransfer(stakers[i], userRewards);
-        }
-
-        emit EmergencyWithdraw(block.timestamp);
+    /**
+    * @dev Adjusts the maximum stake amount allowed per user.
+    * @param _newMaxStakeAmount The new maximum stake amount.
+     Only callable by the contract owner.
+    */
+    function adjustMaxStakeAmount(
+        uint256 _newMaxStakeAmount
+    ) external onlyOwner {
+        maxStakeAmount = _newMaxStakeAmount;
     }
 
     /**
-    
-     */
-    function restartStakingProgram(
-        uint256 _rewardsRate,
-        uint256 _rewardsDuration
-    ) external onlyRewardsDistribution {
+
+    * @dev Adjusts the staking cap for the program.
+    * @param _newCap The new staking cap for the program.
+    Only callable by the contract owner.
+    */
+    function adjustStakingCapForProgram(uint256 _newCap) external onlyOwner {
+        maxStakingCapForProgram = _newCap;
+    }
+
+    /* ========== MODIFIERS ========== */
+
+    /**
+
+    @dev Modifier that updates the reward variables before executing the function.
+    It calculates and updates the rewardPerTokenStored and lastUpdateTime.
+    If the account is not the zero address, it also updates the rewards and userRewardPerTokenPaid for the account.
+    */
+    modifier updateReward(address account) {
+        rewardPerTokenStored = rewardPerToken();
+        lastUpdateTime = lastTimeRewardApplicable();
+        if (account != address(0)) {
+            rewards[account] = earned(account);
+            userRewardPerTokenPaid[account] = rewardPerTokenStored;
+        }
+        _;
+    }
+
+    // This modifier is used to check whether the staking program is still ongoing
+    modifier rewardsProgramIsStillOngoing() {
         require(
-            block.timestamp > _rewardsDuration,
-            "Previous rewards period must be complete before changing the duration for the new period"
+            block.timestamp < periodFinish,
+            "staking program duration has ended"
         );
-        rewardRate = _rewardsRate;
-        rewardsDuration = _rewardsDuration;
-        stakingStart = block.timestamp;
-        periodFinish = stakingStart.add(rewardsDuration);
-        emit RewardsDurationUpdated(rewardsDuration);
-        emit RewardAdded(_rewardsRate);
+        _;
+    }
+
+    modifier gateKeeper(uint256 amount) {
+        // Calculate the remaining available staking capacity by subtracting the total staked amount from the maxStakingCapForProgram
+        uint256 remainingStakingCapacity = maxStakingCapForProgram.sub(
+            _totalSupply
+        );
+
+        // Check if the remaining staking capacity is greater than or equal to the amount being staked
+        require(
+            remainingStakingCapacity >= amount,
+            "staking cap for this program has been reached"
+        );
+
+        _;
     }
 
     /* ========== EVENTS ========== */
@@ -415,5 +372,4 @@ contract StakingRewards is
     event RewardPaid(address indexed user, uint256 reward);
     event RewardsDurationUpdated(uint256 newDuration);
     event Recovered(address token, uint256 amount);
-    event EmergencyWithdraw(uint256 timeblock);
 }
