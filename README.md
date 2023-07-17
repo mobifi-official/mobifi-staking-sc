@@ -1,4 +1,4 @@
-# Discalmer  
+# Disclaimer 
 This repository is home to the MobiFi staking smart contract, facilitating users to stake their MoFi tokens and receive MoFi tokens as potential rewards. Any individual choosing to utilize this smart contract should be aware that they do so at their own risk. The MobiFi team expressly disclaims all liability in relation to the use of this smart contract. This should not be interpreted as a guarantee of reward or profit.
 
 All potential users should carefully consider and fully understand all risks involved. Users are responsible for any and all outcomes, financial or otherwise, that may arise from usage of the smart contract.
