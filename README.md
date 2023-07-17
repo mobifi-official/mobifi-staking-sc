@@ -1,5 +1,11 @@
-# Intro 
-soon to be completed
+# Discalmer  
+This repository is home to the MobiFi staking smart contract, facilitating users to stake their MoFi tokens and receive MoFi tokens as potential rewards. Any individual choosing to utilize this smart contract should be aware that they do so at their own risk. The MobiFi team expressly disclaims all liability in relation to the use of this smart contract. This should not be interpreted as a guarantee of reward or profit.
+
+All potential users should carefully consider and fully understand all risks involved. Users are responsible for any and all outcomes, financial or otherwise, that may arise from usage of the smart contract.
+
+The MobiFi team makes no warranties, either express or implied, regarding the reliability, accuracy, or completeness of this smart contract, and assumes no liability or responsibility for any errors or omissions. The smart contract is provided "as is", without any express or implied warranty of any kind, including warranties of merchantability, non-infringement, or fitness for a particular purpose.
+
+Lastly, the MobiFi staking smart contract is open-sourced, inviting for transparency and community involvement in its ongoing development and refinement. Please note that the use of this smart contract is subject to the terms and conditions set forth herein, as well as all applicable laws and regulations.
 
 # Sample Hardhat Project
 
@@ -20,7 +26,7 @@ It allows users to stake tokens and earn rewards over time, based
 on the amount of tokens they have staked. The contract leverages 
 OpenZeppelin libraries for secure and efficient implementation.
 
-===== how to use this contract =====
+# how to use this contract
 
 Using Remix to deploy:
 1. Create a new workspace, delete the files in the Contracts folder. then create the exact folder structure as in this repo.
